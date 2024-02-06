@@ -1,51 +1,18 @@
-class Point {
-    x { _x }
-    y { _y }
-    q { _q }
-    r { _r }
-
-    x=(value) { 
-        _x = value
-        _q = value
-    }
-
-    y=(value) {
-        _y = value
-        _r = value
-    }
-    
-    q=(value) { 
-        _q = value
-        _x = value
-    }
-
-    r=(value) {
-        _r = value
-        _y = value
-    }
-
-    construct new(first, second) {
-        _x = first
-        _q = first
-
-        _y = second
-        _r = second
-    }
-}
-
 class Hex {
+    static outer_radius { __outer_radius }
+    static inner_radius { __inner_radius }
+    
     id { _id }
-    position { _position }
-    is_hovered { _is_hovered }
-
     id=(value) {
         _id = value
     }
 
+    position { _position }
     position=(value) { 
         _position = value
     }
 
+    is_hovered { _is_hovered }
     is_hovered=(value) {
         _is_hovered = value
     }
@@ -55,4 +22,11 @@ class Hex {
         _position = position
         _is_hovered = false
     }
+
+    static init_as_flat_top(outer_radius) {
+        __outer_radius = outer_radius
+        __inner_radius = outer_radius * 0.9
+    }
 }
+
+import "point" for Point
