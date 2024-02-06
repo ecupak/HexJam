@@ -1,0 +1,7 @@
+# Only include the project / unique files + shared folder
+# Do not include anything from the root that comes with xs
+/*.dll
+/*.lib
+/*.exp
+/*.toml
+/*.exe
