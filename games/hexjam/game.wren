@@ -1,5 +1,10 @@
-import "xs" for Data, Input, Audio    // These are the parts of the xs we will be using
+import "xs" for Data, Render, Input, Audio    // These are the parts of the xs we will be using
 
+
+class GS {
+    static Play { 0 }
+    static Win { 1 }
+}
 
 // The entry point (main) is the Game class
 class Game {
@@ -7,7 +12,7 @@ class Game {
     static config() {
         // Configure the window in xs
         Data.setNumber("Width", 720, Data.system)
-        Data.setNumber("Height", 480, Data.system)
+        Data.setNumber("Height", 740, Data.system)
         Data.setNumber("Multiplier", 1, Data.system)
     }
 
@@ -16,11 +21,18 @@ class Game {
     static init() {     
         System.print("Hello HexJam")
         
+        __state = GS.Play
+
         var outer_radius = 50
-        var range = 2
+        var range = 3
 
         Hex.init_as_flat_top(outer_radius)
         HexMap.init(range)
+        ShoveButton.init()
+
+        __player = Player.new(Point.new(0, 0))
+
+        __max_level = 3
 
         __level = 1
         setupLevel()
@@ -29,28 +41,58 @@ class Game {
     
     // The update method is called once per tick, gameplay code goes here.
     static update(dt) {
-        HexMap.update(dt)
+        if (__state == GS.Play) {
+            HexMap.update(dt, __player)
+            
+            if (__player.current_hex.is_goal) {
+                __state = GS.Win
+            }
+
+            __player.update(dt)
+        } else if (__state == GS.Win && Input.getMouseButtonOnce(Input.mouseButtonLeft)) {
+            __state = GS.Play
+            __level = __level == __max_level ? 1 : __level + 1
+            System.print(__level)
+            setupLevel()
+        }
     }
     
     
     // The render method is called once per tick, right after update.
     static render() {
         HexMap.render()
+        __player.render()
+
+        var x = 20 + (Data.getNumber("Width") / -2)
+        var y = (Data.getNumber("Height") / 2)
+        Render.setColor(0x0000FFFF)
+        if (__level == __max_level) {
+            Render.shapeText("Level %(__level) (randomized!)", x, -y + 40, 3)
+        } else {
+            Render.shapeText("Level %(__level)", x, -y + 40, 3)
+        }
+
+        if (__state == GS.Win){
+            Render.setColor(0x00AA00FF)
+            Render.shapeText("WIN", x, y - 10, 5)
+
+            if (__level < __max_level) {
+                Render.setColor(0xAA5500FF)
+                Render.shapeText("Click to continue", x + 100, y - 10, 3)
+            } else {
+                Render.setColor(0xAA5500FF)
+                Render.shapeText("Click to play again", x + 100, y - 10, 3)
+            }
+        }
     }
 
 
     static setupLevel() {
-        HexMap.setupLevel()
-    }
-
-    static unkey(value) {
-        var r = value / 1000
-        value = value - r
-        var q = value
-        
-        return Point.new(q, r)
+        HexMap.setupLevel(__player, __level)
     }
 }
 
 import "hex_map" for HexMap
 import "hex" for Hex, Point
+import "shove_button" for ShoveButton
+import "player" for Player

@@ -42,8 +42,8 @@ class Point {
         _y = second
         _r = second
 
-        _z = 0
-        _s = 0
+        _z = -first - second
+        _s = -first - second
     }
 
     construct triple(first, second, third) {
