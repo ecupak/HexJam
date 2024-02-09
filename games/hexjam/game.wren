@@ -19,41 +19,48 @@ class Game {
     
     // You can initialize you game specific data here.
     static init() {     
-        System.print("Hello HexJam")
-        
-        __state = GS.Play
-
+        // Initialize static variables.
         var outer_radius = 50
+        Hex.init(outer_radius)
+
         var range = 3
-
-        Hex.init_as_flat_top(outer_radius)
+        HexMath.init(range)
         HexMap.init(range)
-        ShoveButton.init()
 
+        // Create player.
         __player = Player.new(Point.new(0, 0))
 
+        // Setup starting level.
         __max_level = 3
-
         __level = 1
         setupLevel()
+
+        // Play game.
+        __state = GS.Play
     }
                         
     
     // The update method is called once per tick, gameplay code goes here.
     static update(dt) {
         if (__state == GS.Play) {
-            HexMap.update(dt, __player)
+            var command = HexMap.update(dt, __player)
             
+            if (command != null) {
+                command.execute()
+            }
+
             if (__player.current_hex.is_goal) {
                 __state = GS.Win
             }
 
             __player.update(dt)
-        } else if (__state == GS.Win && Input.getMouseButtonOnce(Input.mouseButtonLeft)) {
-            __state = GS.Play
-            __level = __level == __max_level ? 1 : __level + 1
-            System.print(__level)
-            setupLevel()
+        } else if (__state == GS.Win) {
+            if (Input.getMouseButtonOnce(Input.mouseButtonLeft)) {
+                __state = GS.Play
+                __level = __level == __max_level ? 1 : __level + 1
+                System.print(__level)
+                setupLevel()
+            }
         }
     }
     
@@ -96,3 +103,4 @@ import "hex_map" for HexMap
 import "hex" for Hex, Point
 import "shove_button" for ShoveButton
 import "player" for Player
+import "hex_math" for HexMath

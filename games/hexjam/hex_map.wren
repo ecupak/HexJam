@@ -1,16 +1,22 @@
-import "xs" for Input, Render
+import "xs" for Input, Render, Data
 import "xs_math" for Math
 
 class HexMap {
     range{ __range }
-
+    needs_vision_update { __needs_vision_update }
+    
     static init(range) {
+        // These will not change throughout game.
         __range = range
-        __hexes = {}
-        __hexes_to_move = []
         __shove_buttons = []
         __directions = [ Point.new(1, 0), Point.new(0, 1), Point.new(-1, 1), Point.new(-1, 0), Point.new(0, -1), Point.new(1, -1) ]
+        
+        // Changes with each level.
+        __hexes = {}
         __terrain_layout = []
+
+        // Changes during level.
+        __needs_vision_update = false
     }
 
 
@@ -18,6 +24,7 @@ class HexMap {
         __hexes.clear()
         __terrain_layout.clear()
         __move_counter = 0
+        __needs_vision_update = true
     }
 
 
@@ -33,16 +40,16 @@ class HexMap {
             var max_range = __range.min(-q + __range)
             
             for (r in min_range..max_range) {
-                __hexes[key(q, r)] = Hex.new(hexCount, Point.new(q, r), __terrain_layout[hexCount])
+                __hexes[HexMath.key(q, r)] = Hex.new(hexCount, Point.new(q, r), __terrain_layout[hexCount])
 
                 // Set player
                 if (hexCount == __start) {
-                    player.current_hex = __hexes[key(q, r)]
+                    player.current_hex = __hexes[HexMath.key(q, r)]
                 }
 
                 // Set goal
                 if (hexCount == __goal) {
-                    __hexes[key(q, r)].is_goal = true
+                    __hexes[HexMath.key(q, r)].is_goal = true
                 }
 
                 hexCount = hexCount + 1
@@ -50,7 +57,8 @@ class HexMap {
         }
 
         // Starting hex in hand.
-        __held_hex = Hex.new(hexCount, Point.new(-4, 5), __terrain_layout[hexCount])
+        __held_hex = []
+        __held_hex.add(Hex.new(hexCount, Point.new(-4, 5), __terrain_layout[hexCount]))
 
         // Check each hex on outer ring to determine where to place shove buttons.
         var q = 0
@@ -59,7 +67,7 @@ class HexMap {
 
         for (current_direction in 0..5) {
             for (count in 0...__range) {
-                var hex = __hexes[key(next_position.q, next_position.r)]
+                var hex = __hexes[HexMath.key(next_position.q, next_position.r)]
 
                 // Store the direction of vacancies and occupancies of surrounding hexes.
                 var vacancies = {}
@@ -68,7 +76,7 @@ class HexMap {
                 for (direction in 0..5) {
                     var neighbor_position = this.get_neighbor_position(hex, direction)
                     
-                    if (__hexes.containsKey(key(neighbor_position.q, neighbor_position.r))) {
+                    if (__hexes.containsKey(HexMath.key(neighbor_position.q, neighbor_position.r))) {
                         occupancies[direction] = neighbor_position
                     } else {
                         vacancies[direction] = neighbor_position
@@ -86,13 +94,15 @@ class HexMap {
                     var x = hex_origin.x + angle.cos * distance_from_origin
                     var y = hex_origin.y + angle.sin * distance_from_origin
 
+                    var match_axis = -1
                     if (position.key == 0 || position.key == 3) {
-                        __shove_buttons.add(ShoveButton.new(x, y, position.key, MatchType.R, position.value.r))
+                        match_axis = Axis.R
                     } else if (position.key == 1 || position.key == 4) {
-                        __shove_buttons.add(ShoveButton.new(x, y, position.key, MatchType.Q, position.value.q))
+                        match_axis = Axis.Q
                     } else {
-                        __shove_buttons.add(ShoveButton.new(x, y, position.key, MatchType.S, (-position.value.q) - position.value.r))
+                        match_axis = Axis.S
                     }
+                    __shove_buttons.add(ShoveButton.new(x, y, position.key, match_axis, position.value.item(match_axis)))
                 }
 
                 // Get next hex in ring.
@@ -102,10 +112,7 @@ class HexMap {
     }
 
 
-    static update(dt, player) {
-        var x = Input.getMouseX()
-        var y = Input.getMouseY()
-
+    static getPixelToHexPosition(x, y) {
         var initial_q = (x * 2 / 3) / Hex.outer_radius
         var initial_r = ((x * -1 / 3) + (y * (3).sqrt / 3)) / Hex.outer_radius
         var initial_s = -initial_q - initial_r
@@ -122,144 +129,123 @@ class HexMap {
             rounded_q = -rounded_r - rounded_s
         } else if (delta_r > delta_s) { 
             rounded_r = -rounded_q - rounded_s
+        } // S will be recaulculated by the new Point anyway.
+
+        return Point.new(rounded_q, rounded_r)
+    }
+
+
+    static getHoveredHex(hex_mouse) {
+        var hovered_hex_key = HexMath.key(hex_mouse.q, hex_mouse.r)
+
+        if (__hexes.containsKey(hovered_hex_key)) {
+            return __hexes[hovered_hex_key]
         } else {
-            rounded_s = -rounded_q - rounded_r
-        }
+            return null
+        }        
+    }
 
-        // Highlight hex under mouse if it is valid movement hex (within 1 space and grass/forest terrain).
-        var hovered_hex = key(rounded_q, rounded_r)
-        if (__hexes.containsKey(hovered_hex) && this.get_distance(__hexes[hovered_hex].position, player.current_hex.position) == 1) {
-            if (__hexes[hovered_hex].terrain == Terrain.Grass || __hexes[hovered_hex].terrain == Terrain.Forest) {
-                __hexes[hovered_hex].is_hovered = true
-                
-                if (Input.getMouseButtonOnce(Input.mouseButtonLeft)) {
-                    player.current_hex = __hexes[hovered_hex]
-                    __move_counter = __move_counter + 1
-                }
-            }        
-        }
+    
+    static displayHexInfo(hex) {
+        hex.is_hovered = true
+    }
 
-        // Check against buttons.
-        var hovered_button_index = -1
+
+    static canMoveToHex(actor, hex) {
+        var isWithinMovementRange = (this.get_distance(hex.position, actor.current_hex.position) == 1)
+        var isWalkableTerrain = (hex.terrain == Terrain.Grass || hex.terrain == Terrain.Forest)
+        
+        return (isWithinMovementRange && isWalkableTerrain)        
+    }
+
+
+    static getHoveredShoveButton(pixel_mouse) {
         var distance_button_to_edge = (ShoveButton.radius).pow(2)
+
         for (index in 0...__shove_buttons.count) {
             var button = __shove_buttons[index]
         
-            var mouse_x_distance = button.position.x - x
-            var mouse_y_distance = button.position.y - y
+            var mouse_x_distance = button.position.x - pixel_mouse.x
+            var mouse_y_distance = button.position.y - pixel_mouse.y
             var distance_from_button = (mouse_x_distance.pow(2) + mouse_y_distance.pow(2))
         
             if (distance_from_button <= distance_button_to_edge) {
-                button.is_hovered = true
-                hovered_button_index = index
-                break
-            }
+                return button
+            }            
         }
 
-        // If button is hovered, highlight stack to move if clicked.
-        __hexes_to_move.clear()
-        if (hovered_button_index > -1) {
-            var button = __shove_buttons[hovered_button_index]
+        return null
+    }
 
-            for (hex in __hexes) {
-                if (button.match_type == MatchType.Q && button.match_value == hex.value.position.q) {
-                    __hexes_to_move.add(hex.value)
-                } else if (button.match_type == MatchType.R && button.match_value == hex.value.position.r) {
-                    __hexes_to_move.add(hex.value)
-                } else if (button.match_type == MatchType.S && button.match_value == hex.value.position.s) {
-                    __hexes_to_move.add(hex.value)
+
+    static update(dt, player) {
+        // Get position of mouse in pixel and hex space.
+        var pixel_mouse = Point.new(Input.getMouseX(), Input.getMouseY())
+        var hex_mouse = getPixelToHexPosition(pixel_mouse.x, pixel_mouse.y)
+
+
+        // Display hovered hex info. Move to hex on mouse LB.
+        var hex = getHoveredHex(hex_mouse)
+
+        if (hex != null) {
+            hex.is_hovered = true // Will display hex info.
+
+            if (canMoveToHex(player, hex)) {
+                hex.is_highlighted = true // Will signal as valid option to player.
+            
+                if (Input.getMouseButtonOnce(Input.mouseButtonLeft)) {
+                    __move_counter = __move_counter + 1
+                    __needs_vision_update = true
+            
+                    return MoveToHexCommand.new(player, hex)
                 }
             }
         }
+        
 
-        if (__hexes_to_move.count > 0) {
-            
-            // Mark all hexes in stack.
-            for (hex in __hexes_to_move) {
-                hex.is_in_stack = true
-            }
+        // Highlight hexes to be moved. Shift hexes on mouse LB.       
+        var shove_button = getHoveredShoveButton(pixel_mouse)        
 
-            // If mouse clicked and stack has hexes, move them.
+        // If button is hovered, highlight stack to move & move if clicked.
+        if (shove_button != null) {
+            shove_button.is_hovered = true
+
+            MapActions.prepareHexLine(__hexes, shove_button.match_axis, shove_button.match_value)
+
             if (Input.getMouseButtonOnce(Input.mouseButtonLeft)) {
                 __move_counter = __move_counter + 1
+                __needs_vision_update = true
 
-                // Sort the hexes by match type and direction
-                var button = __shove_buttons[hovered_button_index]
+                return ShiftHexLineCommand.new(__hexes, __held_hex, shove_button.sort_axis, shove_button.sort_ascending)
+            }
+        }
 
-                for (passes in 0...(__hexes_to_move.count - 1)) {
-                    var swap = false
-                    var swap_index = 0
 
-                    for (index in 0...(__hexes_to_move.count - 1 - passes)) {
-                        var should_swap = false
-
-                        if (button.is_ascending) {
-                            if (button.sort_type == MatchType.Q) {
-                                if (__hexes_to_move[index].position.q > __hexes_to_move[index + 1].position.q) {
-                                    should_swap = true
-                                }
-                            } else if (button.sort_type == MatchType.R) {
-                                if (__hexes_to_move[index].position.r > __hexes_to_move[index + 1].position.r) {
-                                    should_swap = true
-                                }
-                            }
-                        } else { // descending order
-                            if (button.sort_type == MatchType.Q) {
-                                if (__hexes_to_move[index].position.q < __hexes_to_move[index + 1].position.q) {
-                                    should_swap = true
-                                }
-                            } else if (button.sort_type == MatchType.R) {
-                                if (__hexes_to_move[index].position.r < __hexes_to_move[index + 1].position.r) {
-                                    should_swap = true
-                                }
-                            }
-                        }
-
-                        // Swap
-                        if (should_swap) {
-                            var temp = __hexes_to_move[index]
-                            __hexes_to_move[index] = __hexes_to_move[index + 1]
-                            __hexes_to_move[index + 1] = temp
-
-                            swap = true
-                        }    
-                    } // single pass
-
-                    if (swap == false) {
-                        break
-                    }
-                } // sorting
-
-                // Move hexes to new positions.
-                var held_position = __held_hex.position
-                __held_hex.position = __hexes_to_move[0].position
-                for (index in 0...__hexes_to_move.count - 1) {
-                    __hexes_to_move[index].position = __hexes_to_move[index + 1].position
-                    __hexes_to_move[index].is_in_stack = false
-                }
-                __hexes_to_move[__hexes_to_move.count - 1].position = held_position
-                __hexes_to_move[__hexes_to_move.count - 1].is_in_stack = false
-
-                // Reassign hexes in map. Skip the last one (now the held hex). Manually add the previous held hex.
-                for (index in 0...__hexes_to_move.count - 1) {
-                    var hex = __hexes_to_move[index]
-                    __hexes[key(hex.position.q, hex.position.r)] = hex
-                }
-                __hexes[key(__held_hex.position.q, __held_hex.position.r)] = __held_hex
-                __held_hex = __hexes_to_move[__hexes_to_move.count - 1]
-
-            } // Mouse click
-        } // Hex stack has items
+        // No commands to execute.
+        return null
     }
     
+
+    static updateVision() {
+        // Mark all tiles as visible.
+        for (hex in __hexes) {
+            
+        }
+
+        // From player, draw line to every tile on outer ring.
+
+        // Traverse each line. When vision-blocking tile is reached, mark all tiles after it as not visible.
+
+        __needs_vision_update = false
+    }
+
     static render() {
         for (hex in __hexes) {
             draw_hex(hex.value)
-            hex.value.is_hovered = false
-            hex.value.is_in_stack = false
+            hex.value.reset()
         }
 
-        draw_hex(__held_hex)
+        draw_hex(__held_hex[0])
 
         for (button in __shove_buttons) {
             draw_button(button)
@@ -267,15 +253,20 @@ class HexMap {
         }
 
         // Turn tracker
+        var x = Data.getNumber("Width") / 2
+        var y = Data.getNumber("Height") / 2
+        var x_offset = 180
+        var y_offset = 40
         Render.setColor(0xFFFFFFFF)
+
         if (__best_move == -1) {
-            Render.shapeText("Aim: ???", 180, -290, 3)
+            Render.shapeText("Aim: ???", x - x_offset, -y + (y_offset * 2), 3)
         } else {
-            Render.shapeText("Aim: %(__best_move)", 180, -290, 3)
+            Render.shapeText("Aim: %(__best_move)", x - x_offset, -y + (y_offset * 2), 3)
         }
 
         Render.setColor(0xFFFF00FF)
-        Render.shapeText("Moves: %(__move_counter)", 180, -330, 3)
+        Render.shapeText("Moves: %(__move_counter)", x - x_offset, -y + y_offset, 3)
     }
 
 
@@ -289,9 +280,9 @@ class HexMap {
         var y_start = origin.y + angle.sin * Hex.inner_radius
 
         // Border color.
-        if (hex.id == __held_hex.id) {
+        if (hex.id == __held_hex[0].id) {
             Render.setColor(0xFFFFFFFF)
-        } else if (hex.is_hovered) {
+        } else if (hex.is_highlighted) {
             Render.setColor(0x00FF00FF)
         } else if (hex.is_in_stack) {
             Render.setColor(0xFFFF00FF)
@@ -357,8 +348,16 @@ class HexMap {
                 }
             }
         }
-        // Render.setColor(0xFFFFFFFF)
-        // Render.shapeText("%(hex.id)", origin.x, origin.y, 2)
+
+        if (hex.is_hovered) {
+            var x = Data.getNumber("Width") / 2
+            var y = Data.getNumber("Height") / 2
+            var x_offset = 230
+            var y_offset = 10
+
+            Render.setColor(0xFFFFFFFF)
+            Render.shapeText("#%(hex.id) @ (%(hex.position.q), %(hex.position.r), %(hex.position.s))", x - x_offset, y - y_offset, 2)
+        }
     }
 
 
@@ -378,8 +377,6 @@ class HexMap {
         }
         Render.circle(button.position.x, button.position.y, ShoveButton.radius, 16)
     }
-
-    static key(q, r) { (q + __range) + ((r + __range) * 1000) }
 
     static add_relative_position(position, relative_position) { Point.new(position.q + relative_position.q, position.r + relative_position.r) }
 
@@ -528,7 +525,10 @@ class HexMap {
 }
 
 import "hex" for Hex, Terrain
-import "point" for Point
-import "shove_button" for ShoveButton, MatchType
+import "point" for Point, Axis
+import "shove_button" for ShoveButton
 import "player" for Player
 import "random" for Random
+import "map_actions" for MapActions
+import "hex_math" for HexMath
+import "commands" for MoveToHexCommand, ShiftHexLineCommand

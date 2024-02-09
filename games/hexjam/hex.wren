@@ -24,6 +24,11 @@ class Hex {
         _is_hovered = value
     }
 
+    is_highlighted { _is_highlighted }
+    is_highlighted=(value) {
+        _is_highlighted = value
+    }
+
     is_in_stack { _is_in_stack }
     is_in_stack=(value) {
         _is_in_stack = value
@@ -49,9 +54,15 @@ class Hex {
         _is_goal = false
     }
 
-    static init_as_flat_top(outer_radius) {
+    static init(outer_radius) {
         __outer_radius = outer_radius
         __inner_radius = outer_radius * 0.9
+    }
+
+    reset() {
+        _is_highlighted = false
+        _is_hovered = false
+        _is_in_stack = false
     }
 }
 

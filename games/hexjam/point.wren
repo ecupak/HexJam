@@ -1,59 +1,47 @@
+class Axis {
+    static X { 0 }
+    static Y { 1 }
+    static Z { 2 }
+
+    static Q { 0 }
+    static R { 1 }
+    static S { 2 }
+}
+
 class Point {
-    x { _x } 
+    x { _points[0] } 
     x=(value) { 
-        _x = value
-        _q = value
+       _points[0] = value
     }
 
-    y { _y }
-    y=(value) {
-        _y = value
-        _r = value
+    y { _points[1] } 
+    y=(value) { 
+       _points[1] = value
     }
     
-    z { _z }
+    z { _points[2] } 
     z=(value) { 
-        _z = value
-        _s = value
+       _points[2] = value
+    }
+
+    q { _points[0] } 
+    q=(value) { 
+       _points[0] = value
     }
     
-    q { _q }
-    q=(value) { 
-        _q = value
-        _x = value
+    r { _points[1] } 
+    r=(value) { 
+       _points[1] = value
     }
 
-    r { _r }
-    r=(value) {
-        _r = value
-        _y = value
-    }
-
-    s { _s }
+    s { _points[2] } 
     s=(value) { 
-        _s = value
-        _z = value
+       _points[2] = value
     }
+
+    item(index) { _points[index ]}
 
     construct new(first, second) {
-        _x = first
-        _q = first
-
-        _y = second
-        _r = second
-
-        _z = -first - second
-        _s = -first - second
-    }
-
-    construct triple(first, second, third) {
-        _x = first
-        _q = first
-
-        _y = second
-        _r = second
-
-        _z = third
-        _s = third
+        _points = [ first, second, -first - second]
     }
 }
