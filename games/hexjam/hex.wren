@@ -44,6 +44,17 @@ class Hex {
         _is_goal = value
     }
 
+    is_visible { _is_visible }
+    is_visible=(value) {
+        _is_visible = value
+    }
+
+    occupants { _occupants }
+    occupants=(value) {
+        _occupants = value
+    }
+
+
     construct new(id, position, terrain) {
         _id = id
         _position = position
@@ -52,6 +63,8 @@ class Hex {
         _is_hovered = false
         _is_in_stack = false
         _is_goal = false
+        _is_visible = 1
+        _occupants = []
     }
 
     static init(outer_radius) {
@@ -59,10 +72,19 @@ class Hex {
         __inner_radius = outer_radius * 0.9
     }
 
+
+    moved() {
+        if (_occupants.count > 0) {
+            _occupants[0].setPosition(_position)
+        }
+    }
+
+
     reset() {
         _is_highlighted = false
         _is_hovered = false
         _is_in_stack = false
+        _occupant = []
     }
 }
 

@@ -1,9 +1,8 @@
 import "xs" for Input, Render, Data
-import "xs_math" for Math
+import "xs_math" for Math, Vec2
 
 class HexMap {
-    range{ __range }
-    needs_vision_update { __needs_vision_update }
+    static needs_visibility_update { __needs_visibility_update }
     
     static init(range) {
         // These will not change throughout game.
@@ -16,7 +15,10 @@ class HexMap {
         __terrain_layout = []
 
         // Changes during level.
-        __needs_vision_update = false
+        __needs_visibility_update = false
+
+        // debug.
+        __hover_hex = []
     }
 
 
@@ -24,7 +26,7 @@ class HexMap {
         __hexes.clear()
         __terrain_layout.clear()
         __move_counter = 0
-        __needs_vision_update = true
+        __needs_visibility_update = true
     }
 
 
@@ -44,7 +46,12 @@ class HexMap {
 
                 // Set player
                 if (hexCount == __start) {
-                    player.current_hex = __hexes[HexMath.key(q, r)]
+                    var starting_hex = __hexes[HexMath.key(q, r)]
+
+                    player.current_hex = starting_hex
+                    player.setPosition(starting_hex.position)
+
+                    starting_hex.occupants = [player]
                 }
 
                 // Set goal
@@ -74,7 +81,7 @@ class HexMap {
                 var occupancies = {}
 
                 for (direction in 0..5) {
-                    var neighbor_position = this.get_neighbor_position(hex, direction)
+                    var neighbor_position = getNeighborPosition(hex, direction)
                     
                     if (__hexes.containsKey(HexMath.key(neighbor_position.q, neighbor_position.r))) {
                         occupancies[direction] = neighbor_position
@@ -85,14 +92,14 @@ class HexMap {
 
                 // If the opposing sides both have a neighbor, this vacant side can be pushed.
                 for (position in vacancies) {
-                    var hex_origin = this.get_hex_origin_xy(hex.position.q, hex.position.r)
+                    var pixel_origin = getPixelPositionFromHex(hex.position.q, hex.position.r)
 
                     var angle_increment = (Math.pi * 2) / 6
                     var angle = (angle_increment * 0.5) + (angle_increment * position.key) 
 
                     var distance_from_origin = Hex.outer_radius * 1.1
-                    var x = hex_origin.x + angle.cos * distance_from_origin
-                    var y = hex_origin.y + angle.sin * distance_from_origin
+                    var x = pixel_origin.x + angle.cos * distance_from_origin
+                    var y = pixel_origin.y + angle.sin * distance_from_origin
 
                     var match_axis = -1
                     if (position.key == 0 || position.key == 3) {
@@ -106,24 +113,45 @@ class HexMap {
                 }
 
                 // Get next hex in ring.
-                next_position = get_neighbor_position(hex, current_direction)
+                next_position = getNeighborPosition(hex, current_direction)
             }
         }
+
+        // Update visibility.
+        updateVisibility(player)
     }
 
 
-    static getPixelToHexPosition(x, y) {
-        var initial_q = (x * 2 / 3) / Hex.outer_radius
-        var initial_r = ((x * -1 / 3) + (y * (3).sqrt / 3)) / Hex.outer_radius
-        var initial_s = -initial_q - initial_r
+    static getPixelPositionFromHex(hex_position) { getPixelPositionFromHex(hex_position.q, hex_position.r) }
 
-        var rounded_q = initial_q.round
-        var rounded_r = initial_r.round
-        var rounded_s = initial_s.round
+    static getPixelPositionFromHex(q, r) {
+        var x = Hex.outer_radius * (3 / 2 * q)
+        var y = Hex.outer_radius * ((3).sqrt / 2 * q + (3).sqrt * r)
 
-        var delta_q = (initial_q - rounded_q).abs
-        var delta_r = (initial_r - rounded_r).abs
-        var delta_s = (initial_s - rounded_s).abs
+        return Point.new(x, y)
+    }
+
+
+    static getHexPositionFromPixel(pixel_position) { getHexPositionFromPixel(pixel_position.x, pixel_position.y) }
+
+    static getHexPositionFromPixel(x, y) {
+        var unrounded_position = Point.new(
+            (x * 2 / 3) / Hex.outer_radius,
+            ((x * -1 / 3) + (y * (3).sqrt / 3)) / Hex.outer_radius  
+        )
+
+        return roundHexPosition(unrounded_position)
+    }
+
+
+    static roundHexPosition(unrounded_position) {
+        var rounded_q = unrounded_position.q.round
+        var rounded_r = unrounded_position.r.round
+        var rounded_s = unrounded_position.s.round
+
+        var delta_q = (unrounded_position.q - rounded_q).abs
+        var delta_r = (unrounded_position.r - rounded_r).abs
+        var delta_s = (unrounded_position.s - rounded_s).abs
 
         if (delta_q > delta_r && delta_q > delta_s) {
             rounded_q = -rounded_r - rounded_s
@@ -136,9 +164,9 @@ class HexMap {
 
 
     static getHoveredHex(hex_mouse) {
-        var hovered_hex_key = HexMath.key(hex_mouse.q, hex_mouse.r)
+       var hovered_hex_key = HexMath.key(hex_mouse.q, hex_mouse.r)
 
-        if (__hexes.containsKey(hovered_hex_key)) {
+        if (__hexes.containsKey(hovered_hex_key)) {            
             return __hexes[hovered_hex_key]
         } else {
             return null
@@ -152,7 +180,7 @@ class HexMap {
 
 
     static canMoveToHex(actor, hex) {
-        var isWithinMovementRange = (this.get_distance(hex.position, actor.current_hex.position) == 1)
+        var isWithinMovementRange = (getDistance(hex.position, actor.current_hex.position) == 1)
         var isWalkableTerrain = (hex.terrain == Terrain.Grass || hex.terrain == Terrain.Forest)
         
         return (isWithinMovementRange && isWalkableTerrain)        
@@ -181,13 +209,15 @@ class HexMap {
     static update(dt, player) {
         // Get position of mouse in pixel and hex space.
         var pixel_mouse = Point.new(Input.getMouseX(), Input.getMouseY())
-        var hex_mouse = getPixelToHexPosition(pixel_mouse.x, pixel_mouse.y)
+        var hex_mouse = getHexPositionFromPixel(pixel_mouse.x, pixel_mouse.y)
 
 
         // Display hovered hex info. Move to hex on mouse LB.
+        __hover_hex.clear()
         var hex = getHoveredHex(hex_mouse)
 
         if (hex != null) {
+            __hover_hex.add(hex)
             hex.is_hovered = true // Will display hex info.
 
             if (canMoveToHex(player, hex)) {
@@ -195,7 +225,7 @@ class HexMap {
             
                 if (Input.getMouseButtonOnce(Input.mouseButtonLeft)) {
                     __move_counter = __move_counter + 1
-                    __needs_vision_update = true
+                    __needs_visibility_update = true
             
                     return MoveToHexCommand.new(player, hex)
                 }
@@ -214,7 +244,7 @@ class HexMap {
 
             if (Input.getMouseButtonOnce(Input.mouseButtonLeft)) {
                 __move_counter = __move_counter + 1
-                __needs_vision_update = true
+                __needs_visibility_update = true
 
                 return ShiftHexLineCommand.new(__hexes, __held_hex, shove_button.sort_axis, shove_button.sort_ascending)
             }
@@ -226,20 +256,125 @@ class HexMap {
     }
     
 
-    static updateVision() {
-        // Mark all tiles as visible.
-        for (hex in __hexes) {
-            
-        }
+    static lerp(a, b, t) { a + (b - a) * t }
 
-        // From player, draw line to every tile on outer ring.
 
-        // Traverse each line. When vision-blocking tile is reached, mark all tiles after it as not visible.
-
-        __needs_vision_update = false
+    static hexLerp(a, b , t) {        
+        return Point.new(
+            lerp(a.q, b.q, t),
+            lerp(a.r, b.r, t),
+            lerp(a.s, b.s, t)
+        )
     }
 
-    static render() {
+
+    static revealAdjacentHexes(player) {
+        for (current_direction in 0...6) {
+            var next_position = getNeighborPosition(player.current_hex, current_direction)
+            
+            var hex_key = HexMath.key(next_position.q, next_position.r)
+            
+            if (__hexes.containsKey(hex_key)) {
+                __hexes[hex_key].is_visible = true
+            }
+        }
+    }
+
+
+    static revealHexesInLineOfSight(player) {
+        // From player, draw line to every tile on outer ring.        
+        var next_position = Point.new(0, -__range)
+
+        // For each side of the map:
+        for (current_direction in 0...6) {
+            
+            // For each hex along the side (same length as range - 1, so corners aren't doubled-up)
+            for (count in 0...__range) {
+                var edge_hex = __hexes[HexMath.key(next_position.q, next_position.r)]
+                var distance = getDistance(player.hex_position, edge_hex.position)
+                
+                if (distance > 0) {
+
+                    var pixel_origin = getPixelPositionFromHex(player.hex_position)
+                    var pixel_destination = getPixelPositionFromHex(edge_hex.position)
+                    
+                    var origin_to_destination = Vec2.new(pixel_destination.x - pixel_origin.x, pixel_destination.y - pixel_origin.y)
+                    var degree = origin_to_destination.atan2
+                    
+                    var step_size = origin_to_destination / distance
+
+                    // We'll shoot 2 rays above and below the main line.                    
+                    var radius_offset = Hex.inner_radius * 0.8
+                    var degree_offsets = [Math.pi / 2, -Math.pi/ 2]                    
+
+                    for (ray_index in 0...2) {
+                        var ray_origin = Vec2.new(
+                            pixel_origin.x + (degree + degree_offsets[ray_index]).cos * radius_offset, 
+                            pixel_origin.y + (degree + degree_offsets[ray_index]).sin * radius_offset
+                        )
+
+                        // Collect all hexes between origin and destination (skipping initial start and including destination)
+                        var hexes_in_line = []
+                        for (n in 1..distance) {
+                            var hex_position = getHexPositionFromPixel(ray_origin + (step_size * n))
+                            hexes_in_line.add(__hexes[HexMath.key(hex_position.q, hex_position.r)])
+                        }
+
+                        // Check visibility of each hex.
+                        var has_line_of_sight = true
+                        for (n in 0...hexes_in_line.count) {
+                            var hex = hexes_in_line[n]
+
+                            // A hex is visible if at least 1 ray can see it.
+                            if (has_line_of_sight) {
+                                hex.is_visible = true
+                            }
+
+                            // Mountains and forests block line of sight.
+                            if (hex.terrain == Terrain.Mountain || hex.terrain == Terrain.Forest) {
+                                has_line_of_sight = false
+                            }
+                        }
+                    }
+                }
+
+                // Get next hex on outer ring.
+                next_position = getNeighborPosition(edge_hex, current_direction)
+            }
+        }
+    }
+
+
+    static updateVisibility(player) {
+        // Mark all tiles as not visible.
+        for (hex in __hexes) {
+            hex.value.is_visible = false
+        }
+
+        // Reveal map based on player location.
+        if (player.current_hex.id == __held_hex[0].id) {
+            // Leave everything else hidden.
+        } else if (player.current_hex.terrain == Terrain.Forest) {
+            revealAdjacentHexes(player)        
+        } else {
+            revealHexesInLineOfSight(player)
+        }
+
+        // Player can always see the held hex.
+        __held_hex[0].is_visible = true
+
+        // Player can always see the hex they are on.
+        if (player.current_hex.id != __held_hex[0].id) {            
+            __hexes[HexMath.key(player.hex_position.q, player.hex_position.r)].is_visible = true
+        }
+
+         // Reset visiblity flag. 
+        __needs_visibility_update = false
+    }
+
+
+
+    static render(origin) {
         for (hex in __hexes) {
             draw_hex(hex.value)
             hex.value.reset()
@@ -267,11 +402,58 @@ class HexMap {
 
         Render.setColor(0xFFFF00FF)
         Render.shapeText("Moves: %(__move_counter)", x - x_offset, -y + y_offset, 3)
+
+        if (__hover_hex.count > 0) {
+            // Hex info.
+            Render.setColor(0xFFFFFFFF)
+            Render.shapeText("#%(__hover_hex[0].id) @ (%(__hover_hex[0].position.q), %(__hover_hex[0].position.r), %(__hover_hex[0].position.s))", x - x_offset, y - y_offset, 2)
+            var x = Data.getNumber("Width") / 2
+            var y = Data.getNumber("Height") / 2
+            var x_offset = 230
+            var y_offset = 10
+
+            // Debug visibility.
+            if (Data.getBool("Debug")) {
+                var edge_hex = __hover_hex[0]
+                var distance = getDistance(origin, edge_hex.position)
+                
+                if (distance > 1) {
+                    var pixel_origin = getPixelPositionFromHex(origin)
+                    var pixel_edge_hex = getPixelPositionFromHex(edge_hex.position)
+                    
+                    var origin_to_hex = Vec2.new(pixel_edge_hex.x - pixel_origin.x, pixel_edge_hex.y - pixel_origin.y)
+                    var degree = origin_to_hex.atan2
+                    
+                    var step_size = origin_to_hex / distance
+
+                    // We'll shoot 2 "rays" above and below the main line.
+                    var circle_sizes = [6, 10]
+                    var colors = [0x00FFFFFF, 0xFFFF00FF]
+
+                    var radius_offset = Hex.inner_radius * 0.8
+                    var degree_offsets = [Math.pi / 2, -Math.pi/ 2]                    
+
+                    for (ray_index in 0...2) {
+                        var ray_origin = Vec2.new(
+                            pixel_origin.x + (degree + degree_offsets[ray_index]).cos * radius_offset, 
+                            pixel_origin.y + (degree + degree_offsets[ray_index]).sin * radius_offset
+                        )
+
+                        for (n in 1..distance) {
+                            var position_xy = ray_origin + (step_size * n)
+
+                            Render.setColor(colors[ray_index])
+                            Render.circle(position_xy.x, position_xy.y, circle_sizes[ray_index], 8)                        
+                        }
+                    }
+                }
+            }
+        }
     }
 
 
     static draw_hex(hex) {
-        var origin = this.get_hex_origin_xy(hex.position.q, hex.position.r)
+        var origin = getPixelPositionFromHex(hex.position.q, hex.position.r)
 
         var angle_increment = (Math.pi * 2) / 6
         var angle = angle_increment
@@ -286,8 +468,10 @@ class HexMap {
             Render.setColor(0x00FF00FF)
         } else if (hex.is_in_stack) {
             Render.setColor(0xFFFF00FF)
-        } else {
+        } else if (hex.is_visible) {
             Render.setColor(0xFF00FFFF)
+        } else {
+            Render.setColor(0x2A2A2AFF)
         }
 
         for (sides in 1..6) {
@@ -313,59 +497,43 @@ class HexMap {
         }
 
         // Terrain features.
-        if (hex.terrain == Terrain.Grass) {
-            Render.setColor(0x00FF00FF)
-            for (patch_count in 0..0) {
-                var base = Point.new(origin.x - 12, origin.y + (patch_count == 0 ? -25 : 20))
-                for (blade_count in 0..4) {
-                    Render.begin(Render.lines)
-                    Render.vertex(base.x + (blade_count * 6), base.y)
-                    Render.vertex(base.x + (blade_count * 6), base.y + 6)
-                    Render.end()
+        if (hex.is_visible) {
+            if (hex.terrain == Terrain.Grass) {
+                Render.setColor(0x00FF00FF)
+                for (patch_count in 0..0) {
+                    var base = Point.new(origin.x - 12, origin.y + (patch_count == 0 ? -25 : 20))
+                    for (blade_count in 0..4) {
+                        Render.begin(Render.lines)
+                        Render.vertex(base.x + (blade_count * 6), base.y)
+                        Render.vertex(base.x + (blade_count * 6), base.y + 6)
+                        Render.end()
+                    }
                 }
-            }
-        } else if (hex.terrain == Terrain.Water) {
-            Render.setColor(0x00FFFFFF)
-            Render.circle(origin.x, origin.y, Hex.inner_radius * 0.7, 16)
-        } else if (hex.terrain == Terrain.Mountain) {
-            Render.setColor(0xFF5522FF)
-            Render.begin(Render.lines)
-            Render.vertex(origin.x - 20, origin.y - 20)
-            Render.vertex(origin.x, origin.y + 25)
-            Render.vertex(origin.x + 20, origin.y - 20)
-            Render.end()
-        } else if (hex.terrain == Terrain.Forest) {
-            Render.setColor(0x00AA00FF)
-            for (tree_count in 0..1) {
-                var x_offset = tree_count == 0 ? -20 : 20
-                for (branch_count in 0..1) {
-                    var y_offset = branch_count * -12
-                    Render.begin(Render.lines)
-                    Render.vertex(x_offset + origin.x - 10, y_offset + origin.y)
-                    Render.vertex(x_offset + origin.x, y_offset + origin.y + 20)
-                    Render.vertex(x_offset + origin.x + 10, y_offset + origin.y)
-                    Render.end()
+            } else if (hex.terrain == Terrain.Water) {
+                Render.setColor(0x00FFFFFF)
+                Render.circle(origin.x, origin.y, Hex.inner_radius * 0.7, 16)
+            } else if (hex.terrain == Terrain.Mountain) {
+                Render.setColor(0xFF5522FF)
+                Render.begin(Render.lines)
+                Render.vertex(origin.x - 20, origin.y - 20)
+                Render.vertex(origin.x, origin.y + 25)
+                Render.vertex(origin.x + 20, origin.y - 20)
+                Render.end()
+            } else if (hex.terrain == Terrain.Forest) {
+                Render.setColor(0x00AA00FF)
+                for (tree_count in 0..1) {
+                    var x_offset = tree_count == 0 ? -20 : 20
+                    for (branch_count in 0..1) {
+                        var y_offset = branch_count * -12
+                        Render.begin(Render.lines)
+                        Render.vertex(x_offset + origin.x - 10, y_offset + origin.y)
+                        Render.vertex(x_offset + origin.x, y_offset + origin.y + 20)
+                        Render.vertex(x_offset + origin.x + 10, y_offset + origin.y)
+                        Render.end()
+                    }
                 }
             }
         }
-
-        if (hex.is_hovered) {
-            var x = Data.getNumber("Width") / 2
-            var y = Data.getNumber("Height") / 2
-            var x_offset = 230
-            var y_offset = 10
-
-            Render.setColor(0xFFFFFFFF)
-            Render.shapeText("#%(hex.id) @ (%(hex.position.q), %(hex.position.r), %(hex.position.s))", x - x_offset, y - y_offset, 2)
-        }
-    }
-
-
-    static get_hex_origin_xy(q, r) {
-        var x = Hex.outer_radius * (3 / 2 * q)
-        var y = Hex.outer_radius * ((3).sqrt / 2 * q + (3).sqrt * r)
-
-        return Point.new(x, y)
     }
 
 
@@ -378,11 +546,11 @@ class HexMap {
         Render.circle(button.position.x, button.position.y, ShoveButton.radius, 16)
     }
 
-    static add_relative_position(position, relative_position) { Point.new(position.q + relative_position.q, position.r + relative_position.r) }
+    static addRelativePosition(position, relative_position) { Point.new(position.q + relative_position.q, position.r + relative_position.r) }
 
-    static get_neighbor_position(hex, direction) { add_relative_position(hex.position, __directions[direction]) }
+    static getNeighborPosition(hex, direction) { addRelativePosition(hex.position, __directions[direction]) }
 
-    static get_distance(a, b) { ((a.q - b.q).abs + (a.q + a.r - b.q - b.r).abs + (a.r - b.r).abs) / 2 }
+    static getDistance(a, b) { ((a.q - b.q).abs + (a.q + a.r - b.q - b.r).abs + (a.r - b.r).abs) / 2 }
 
     static createTerrainLayout(level) {
         if (level == 1) {

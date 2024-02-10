@@ -12,7 +12,12 @@ class MoveToHexCommand is Command{
     }
 
     execute() {
+        _actor.current_hex.occupants.clear()
+
         _actor.current_hex = _target_hex
+        _actor.setPosition(_target_hex.position)
+
+        _target_hex.occupants = [_actor]
     }
 }
 
@@ -72,6 +77,7 @@ class ShiftHexLineCommand is Command{
         _held_hex.clear()
         
         previous_held_hex.position = hexes_to_move[0].position
+        previous_held_hex.moved()
         _hexes[HexMath.key(previous_held_hex.position.q, previous_held_hex.position.r)] = previous_held_hex
 
         // ... Hexes in the line are assigned the position of the next hex.
@@ -79,13 +85,14 @@ class ShiftHexLineCommand is Command{
         for (index in 0...(hexes_to_move.count - 1)) {
             var hex_to_move = hexes_to_move[index]
             hex_to_move.position = hexes_to_move[index + 1].position
-            
+            hex_to_move.moved()            
             _hexes[HexMath.key(hex_to_move.position.q, hex_to_move.position.r)] = hex_to_move
         }        
 
         // ... Assign the last hex in line as the new held hex.
         _held_hex.add(hexes_to_move[hexes_to_move.count - 1])
         _held_hex[0].position = held_hex_position
+        _held_hex[0].moved() 
 
         // Clear marked hexes.
         for (hex in _hexes) {            
@@ -96,3 +103,4 @@ class ShiftHexLineCommand is Command{
 
 
 import "hex_math" for HexMath
+import "hex_map" for HexMap

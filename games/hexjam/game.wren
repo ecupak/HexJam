@@ -14,6 +14,7 @@ class Game {
         Data.setNumber("Width", 720, Data.system)
         Data.setNumber("Height", 740, Data.system)
         Data.setNumber("Multiplier", 1, Data.system)
+        Data.setBool("Debug", true, Data.system)
     }
 
     
@@ -28,7 +29,7 @@ class Game {
         HexMap.init(range)
 
         // Create player.
-        __player = Player.new(Point.new(0, 0))
+        __player = Player.new()
 
         // Setup starting level.
         __max_level = 3
@@ -43,12 +44,19 @@ class Game {
     // The update method is called once per tick, gameplay code goes here.
     static update(dt) {
         if (__state == GS.Play) {
+            // Check if player has performed an action.
             var command = HexMap.update(dt, __player)
             
             if (command != null) {
                 command.execute()
             }
 
+            // Update map visibility if things have moved.
+            if (HexMap.needs_visibility_update) {
+                HexMap.updateVisibility(__player)
+            }
+
+            // Check if player has reached goal.
             if (__player.current_hex.is_goal) {
                 __state = GS.Win
             }
@@ -67,7 +75,7 @@ class Game {
     
     // The render method is called once per tick, right after update.
     static render() {
-        HexMap.render()
+        HexMap.render(__player.hex_position)
         __player.render()
 
         var x = 20 + (Data.getNumber("Width") / -2)

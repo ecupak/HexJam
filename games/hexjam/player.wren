@@ -1,10 +1,14 @@
 import "xs" for Render
 
 class Player {
-    position { _position }
+    hex_position { _hex_position }
+    hex_position=(value) { 
+        _hex_position = value
+    }
 
-    position=(value) { 
-        _position = value
+    pixel_position { _pixel_position }
+    pixel_position=(value) { 
+        _pixel_position = value
     }
 
     current_hex { _current_hex }
@@ -12,22 +16,28 @@ class Player {
         _current_hex = value
     }
 
-    construct new(position) {
-        _position = position
+
+    construct new() {
+        // empty
     }
 
 
     update(dt) {
-        _position = _current_hex.position
+        // empty
     }
 
 
     render() {
         Render.setColor(0xFFFF00FF)
+        Render.square(pixel_position.x, pixel_position.y, 10)
+    }
 
-        var origin = HexMap.get_hex_origin_xy(position.q, position.r)
-        Render.square(origin.x, origin.y, 10)
+
+    setPosition(hex_position) {
+        _hex_position = hex_position
+        _pixel_position = HexMap.getPixelPositionFromHex(hex_position)
     }
 }
+
 
 import "hex_map" for HexMap

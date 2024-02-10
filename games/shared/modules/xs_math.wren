@@ -99,7 +99,7 @@ class Vec2 {
         } else if(_x == 0 && _y > 0.0) {
             a = Math.pi / 2.0
         } else if(_x == 0 && _y < 0) {
-            a = -Math.pi / 2.0
+            a = Math.pi / 2.0
         }
 
         return a

@@ -42,6 +42,10 @@ class Point {
     item(index) { _points[index ]}
 
     construct new(first, second) {
-        _points = [ first, second, -first - second]
+        _points = [first, second, -first - second]
+    }
+
+    construct new(first, second, third) {
+      _points = [first, second, third]
     }
 }

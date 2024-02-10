@@ -3,6 +3,10 @@
         "type": "bool",
         "value": false
     },
+    "Debug": {
+        "type": "bool",
+        "value": true
+    },
     "Height": {
         "type": "number",
         "value": 740.0
